@@ -1,0 +1,12 @@
+<resources>
+    <string name="app_name">DataCollector</string>
+
+    <string name="action_settings">Settings</string>
+
+    <string name="button_start">Start</string>
+    <string name="button_stop">Stop</string>
+    <string name="button_save">Save</string>
+
+    <string name="save_message">Enter a label:</string>
+    <string name="save_hint">Unknown</string>
+</resources>
