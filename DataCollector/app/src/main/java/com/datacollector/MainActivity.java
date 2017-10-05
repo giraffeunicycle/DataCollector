@@ -48,6 +48,13 @@ public class MainActivity extends Activity implements SensorEventListener, View.
     private boolean mCollectingData = false;
     private ArrayList<AccelData> mSensorData;
     private long mStartTime;
+    private long mLastRecordTime;
+    private static final long LENGTH = 2000;
+    private static final long RESOLUTION = 20;
+    private double mSumX, mSumY, mSumZ;
+    private int mNumSensorData;
+
+    private String mLastFilename;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -112,17 +119,26 @@ public class MainActivity extends Activity implements SensorEventListener, View.
     public void onSensorChanged(SensorEvent event) {
         // save data to ArrayList
         if (mCollectingData) {
-            double x = event.values[0];
-            double y = event.values[1];
-            double z = event.values[2];
-            long timestamp = System.currentTimeMillis() - mStartTime;
-            // stop after 2 seconds
-            if (timestamp >= 2000) {
-                onClick(mButtonStop);
-            } else {
-                AccelData data = new AccelData(timestamp, x, y, z);
+            long curTime = System.currentTimeMillis();
+            long timestamp = curTime - mStartTime;
+            long timeElapsed = timestamp - mLastRecordTime;
+
+            // time to start a new record?
+            if (timeElapsed >= RESOLUTION) {
+                AccelData data = new AccelData(mLastRecordTime, mSumX / mNumSensorData,
+                        mSumY / mNumSensorData, mSumZ / mNumSensorData);
                 mSensorData.add(data);
+                mLastRecordTime += RESOLUTION;
+                // finish after a certain length of time
+                if (timestamp >= LENGTH) {
+                    onClick(mButtonStop);
+                }
             }
+
+            mSumX += event.values[0];
+            mSumY += event.values[1];
+            mSumZ += event.values[2];
+            mNumSensorData++;
         }
     }
 
@@ -143,6 +159,11 @@ public class MainActivity extends Activity implements SensorEventListener, View.
                 // set up array
                 mSensorData = new ArrayList<>();
                 mStartTime = System.currentTimeMillis();
+                mLastRecordTime = 0;
+                mSumX = 0;
+                mSumY = 0;
+                mSumZ = 0;
+                mNumSensorData = 0;
 
                 // start collecting data
                 mCollectingData = true;
@@ -168,6 +189,7 @@ public class MainActivity extends Activity implements SensorEventListener, View.
                 AlertDialog.Builder builder = new AlertDialog.Builder(this);
                 LayoutInflater inflater = this.getLayoutInflater();
                 final View view = inflater.inflate(R.layout.save_dialog, null);
+                ((EditText) view.findViewById(R.id.save_text)).setText(mLastFilename);
                 builder.setMessage(R.string.save_message)
                         .setView(view)
                         .setPositiveButton(R.string.button_save, new DialogInterface.OnClickListener() {
@@ -218,6 +240,7 @@ public class MainActivity extends Activity implements SensorEventListener, View.
     }
 
     private void saveData(String label) {
+        mLastFilename = label;
         String filename = label.toLowerCase() + "_" + System.currentTimeMillis() + ".csv";
         String path = Environment.getExternalStorageDirectory().getAbsolutePath() + "/DataCollector/";
         File dir = new File(path);
