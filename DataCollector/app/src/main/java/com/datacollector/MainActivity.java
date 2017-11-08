@@ -13,7 +13,6 @@ import android.media.AudioManager;
 import android.media.ToneGenerator;
 import android.os.Bundle;
 import android.os.Environment;
-import android.text.Layout;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.Menu;
@@ -32,7 +31,6 @@ import com.github.mikephil.charting.data.LineDataSet;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.util.ArrayList;
 import java.util.List;
@@ -41,6 +39,7 @@ public class MainActivity extends Activity implements SensorEventListener, View.
 
     private SensorManager mSensorManager;
     private Sensor mAccelerometer;
+    private Sensor mGyroscope;
     private Button mButtonStart, mButtonStop, mButtonSave;
     private LineChart mChart;
     private ToneGenerator mToneGen;
@@ -51,8 +50,9 @@ public class MainActivity extends Activity implements SensorEventListener, View.
     private long mLastRecordTime;
     private static final long LENGTH = 2000;
     private static final long RESOLUTION = 20;
-    private double mSumX, mSumY, mSumZ;
-    private int mNumSensorData;
+    private double mSumX, mSumY, mSumZ, mSumRX, mSumRY, mSumRZ;
+    private int mNumAccelData;
+    private int mNumGyroData;
 
     private String mLastFilename;
 
@@ -64,6 +64,7 @@ public class MainActivity extends Activity implements SensorEventListener, View.
         // sensor
         mSensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
         mAccelerometer = mSensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
+        mGyroscope = mSensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE);
 
         // buttons
         mButtonStart = (Button) findViewById(R.id.button_start);
@@ -85,6 +86,7 @@ public class MainActivity extends Activity implements SensorEventListener, View.
     protected void onResume() {
         super.onResume();
         mSensorManager.registerListener(this, mAccelerometer, SensorManager.SENSOR_DELAY_FASTEST);
+        mSensorManager.registerListener(this, mGyroscope, SensorManager.SENSOR_DELAY_FASTEST);
     }
 
     @Override
@@ -125,9 +127,14 @@ public class MainActivity extends Activity implements SensorEventListener, View.
 
             // time to start a new record?
             if (timeElapsed >= RESOLUTION) {
-                AccelData data = new AccelData(mLastRecordTime, mSumX / mNumSensorData,
-                        mSumY / mNumSensorData, mSumZ / mNumSensorData);
-                mSensorData.add(data);
+                if (mNumAccelData > 0 && mNumGyroData > 0) {
+                    AccelData data = new AccelData(mLastRecordTime, mSumX / mNumAccelData,
+                            mSumY / mNumAccelData, mSumZ / mNumAccelData, mSumRX / mNumGyroData,
+                            mSumRY / mNumGyroData, mSumRZ / mNumGyroData);
+                    mSensorData.add(data);
+                } else {
+                    Toast.makeText(this, "DON'T USE THIS DATA", Toast.LENGTH_LONG).show();
+                }
                 mLastRecordTime += RESOLUTION;
                 // finish after a certain length of time
                 if (timestamp >= LENGTH) {
@@ -135,10 +142,17 @@ public class MainActivity extends Activity implements SensorEventListener, View.
                 }
             }
 
-            mSumX += event.values[0];
-            mSumY += event.values[1];
-            mSumZ += event.values[2];
-            mNumSensorData++;
+            if (event.sensor.equals(mAccelerometer)) {
+                mSumX += event.values[0];
+                mSumY += event.values[1];
+                mSumZ += event.values[2];
+                mNumAccelData++;
+            } else {
+                mSumRX += event.values[0];
+                mSumRY += event.values[1];
+                mSumRZ += event.values[2];
+                mNumGyroData++;
+            }
         }
     }
 
@@ -163,7 +177,11 @@ public class MainActivity extends Activity implements SensorEventListener, View.
                 mSumX = 0;
                 mSumY = 0;
                 mSumZ = 0;
-                mNumSensorData = 0;
+                mSumRX = 0;
+                mSumRY = 0;
+                mSumRZ = 0;
+                mNumAccelData = 0;
+                mNumGyroData = 0;
 
                 // start collecting data
                 mCollectingData = true;
@@ -212,11 +230,17 @@ public class MainActivity extends Activity implements SensorEventListener, View.
         List<Entry> xPoints = new ArrayList<>();
         List<Entry> yPoints = new ArrayList<>();
         List<Entry> zPoints = new ArrayList<>();
+        List<Entry> rxPoints = new ArrayList<>();
+        List<Entry> ryPoints = new ArrayList<>();
+        List<Entry> rzPoints = new ArrayList<>();
 
         for (AccelData data : mSensorData) {
             xPoints.add(new Entry(data.getTimestamp(), (float) data.getX()));
             yPoints.add(new Entry(data.getTimestamp(), (float) data.getY()));
             zPoints.add(new Entry(data.getTimestamp(), (float) data.getZ()));
+            rxPoints.add(new Entry(data.getTimestamp(), (float) data.getRx()));
+            ryPoints.add(new Entry(data.getTimestamp(), (float) data.getRy()));
+            rzPoints.add(new Entry(data.getTimestamp(), (float) data.getRz()));
         }
 
         LineDataSet xDataSet = new LineDataSet(xPoints, "X");
@@ -228,8 +252,17 @@ public class MainActivity extends Activity implements SensorEventListener, View.
         LineDataSet zDataSet = new LineDataSet(zPoints, "Z");
         zDataSet.setColor(Color.BLUE);
         zDataSet.setDrawCircles(false);
+        LineDataSet rxDataSet = new LineDataSet(rxPoints, "RX");
+        rxDataSet.setColor(Color.DKGRAY);
+        rxDataSet.setDrawCircles(false);
+        LineDataSet ryDataSet = new LineDataSet(ryPoints, "RY");
+        ryDataSet.setColor(Color.GRAY);
+        ryDataSet.setDrawCircles(false);
+        LineDataSet rzDataSet = new LineDataSet(rzPoints, "RZ");
+        rzDataSet.setColor(Color.LTGRAY);
+        rzDataSet.setDrawCircles(false);
 
-        LineData lineData = new LineData(xDataSet, yDataSet, zDataSet);
+        LineData lineData = new LineData(xDataSet, yDataSet, zDataSet, rxDataSet, ryDataSet, rzDataSet);
         mChart.setData(lineData);
 
         Description desc = new Description();
