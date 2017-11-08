@@ -19,16 +19,15 @@
     <Button
         android:id="@+id/button_stop"
         android:layout_width="fill_parent"
-        android:layout_height="20dp"
+        android:layout_height="5dp"
         android:visibility="invisible"
         android:text="@string/button_stop" />
 
     <Button
-        android:id="@+id/button_save"
+        android:id="@+id/button_redo"
         android:layout_width="fill_parent"
-        android:layout_height="20dp"
-        android:visibility="invisible"
-        android:text="@string/button_save" />
+        android:layout_height="60dp"
+        android:text="@string/button_redo" />
 
     <TextView
         android:id="@+id/text"

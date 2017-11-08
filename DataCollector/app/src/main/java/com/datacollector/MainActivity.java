@@ -1,10 +1,7 @@
 package com.datacollector;
 
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.content.Context;
-import android.content.DialogInterface;
-import android.graphics.Color;
 import android.graphics.drawable.Drawable;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
@@ -14,32 +11,20 @@ import android.media.AudioManager;
 import android.media.ToneGenerator;
 import android.os.Bundle;
 import android.os.Environment;
-import android.os.Handler;
 import android.util.Log;
-import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
 import android.widget.Button;
-import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
-
-import com.github.mikephil.charting.charts.LineChart;
-import com.github.mikephil.charting.components.Description;
-import com.github.mikephil.charting.data.Entry;
-import com.github.mikephil.charting.data.LineData;
-import com.github.mikephil.charting.data.LineDataSet;
-
-import org.w3c.dom.Text;
 
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStreamWriter;
 import java.util.ArrayList;
-import java.util.List;
 
 public class MainActivity extends Activity implements SensorEventListener, View.OnClickListener {
     private static final int RECORDS_PER_LETTER = 1;
@@ -49,7 +34,7 @@ public class MainActivity extends Activity implements SensorEventListener, View.
     private SensorManager mSensorManager;
     private Sensor mAccelerometer;
     private Sensor mGyroscope;
-    private Button mButtonStart, mButtonStop, mButtonSave;
+    private Button mButtonStart, mButtonStop, mButtonRedo;
     private TextView mTextView;
     private ImageView mImageView;
     private Drawable[] mImages;
@@ -65,6 +50,8 @@ public class MainActivity extends Activity implements SensorEventListener, View.
     private int mNumAccelData;
     private int mNumGyroData;
 
+    private File mLastFile;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -78,11 +65,12 @@ public class MainActivity extends Activity implements SensorEventListener, View.
         // buttons
         mButtonStart = (Button) findViewById(R.id.button_start);
         mButtonStop = (Button) findViewById(R.id.button_stop);
-        mButtonSave = (Button) findViewById(R.id.button_save);
+        mButtonRedo = (Button) findViewById(R.id.button_redo);
         mButtonStart.setOnClickListener(this);
         mButtonStop.setOnClickListener(this);
-        mButtonSave.setOnClickListener(this);
+        mButtonRedo.setOnClickListener(this);
         mButtonStop.setEnabled(false);
+        mButtonRedo.setEnabled(false);
 
         // textview
         mTextView = (TextView) findViewById(R.id.text);
@@ -157,7 +145,9 @@ public class MainActivity extends Activity implements SensorEventListener, View.
                             mSumRY / mNumGyroData, mSumRZ / mNumGyroData);
                     mSensorData[mCurRecord].add(data);
                 } else {
-                    Toast.makeText(this, "DON'T USE THIS DATA", Toast.LENGTH_LONG).show();
+                    // bad data; start over
+                    onClick(mButtonStop);
+                    onClick(mButtonRedo);
                 }
                 mLastRecordTime += RESOLUTION;
                 // finish after a certain length of time
@@ -193,6 +183,7 @@ public class MainActivity extends Activity implements SensorEventListener, View.
                 // enable/disable buttons
                 mButtonStop.setEnabled(true);
                 mButtonStart.setEnabled(false);
+                mButtonRedo.setEnabled(false);
 
                 // set up array
                 mSensorData[mCurRecord] = new ArrayList<>();
@@ -207,6 +198,9 @@ public class MainActivity extends Activity implements SensorEventListener, View.
                 mNumAccelData = 0;
                 mNumGyroData = 0;
 
+                // make loud beep
+                mToneGen.startTone(ToneGenerator.TONE_DTMF_5, 50);
+
                 // start collecting data
                 mCollectingData = true;
                 break;
@@ -218,6 +212,7 @@ public class MainActivity extends Activity implements SensorEventListener, View.
                 // enable/disable buttons
                 mButtonStop.setEnabled(false);
                 mButtonStart.setEnabled(true);
+                mButtonRedo.setEnabled(true);
 
                 // save data
                 saveData();
@@ -228,7 +223,12 @@ public class MainActivity extends Activity implements SensorEventListener, View.
                     mCurRecord = 0;
                     mCurLetter++;
                     if (mCurLetter > 'z') {
-                        onClick(mButtonSave);
+                        // update text and image
+                        mTextView.setText("Thank you!");
+                        mImageView.setImageDrawable(null);
+
+                        // make loud beep
+                        mToneGen.startTone(ToneGenerator.TONE_DTMF_0, 100);
                         break;
                     }
 
@@ -242,12 +242,22 @@ public class MainActivity extends Activity implements SensorEventListener, View.
 
                 break;
 
-            case R.id.button_save:
-                mTextView.setText("Thank you!");
-                mImageView.setImageDrawable(null);
+            case R.id.button_redo:
+                mButtonRedo.setEnabled(false);
 
-                // make loud beep
-                mToneGen.startTone(ToneGenerator.TONE_DTMF_0, 100);
+                mCurRecord--;
+                if (mCurRecord < 0) {
+                    mCurRecord = RECORDS_PER_LETTER - 1;
+                    mCurLetter--;
+
+                    if (!deleteLastFile()) {
+                        Toast.makeText(this, "Warning: old file not deleted", Toast.LENGTH_LONG).show();
+                    }
+
+                    // update text and image
+                    mTextView.setText("Write the letter '" + mCurLetter + "':");
+                    mImageView.setImageDrawable(mImages[mCurLetter - 'a']);
+                }
                 break;
 
             default:
@@ -261,6 +271,7 @@ public class MainActivity extends Activity implements SensorEventListener, View.
         File dir = new File(path);
         dir.mkdirs();
         File file = new File(dir, filename);
+        mLastFile = file;
 
         try {
             file.createNewFile();
@@ -278,5 +289,9 @@ public class MainActivity extends Activity implements SensorEventListener, View.
             Toast.makeText(this, "Error! File not saved.", Toast.LENGTH_SHORT).show();
         }
 
+    }
+
+    private boolean deleteLastFile() {
+        return (mLastFile != null) && mLastFile.exists() && mLastFile.delete();
     }
 }
