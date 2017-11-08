@@ -5,6 +5,7 @@ import android.app.AlertDialog;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.graphics.Color;
+import android.graphics.drawable.Drawable;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
@@ -13,6 +14,7 @@ import android.media.AudioManager;
 import android.media.ToneGenerator;
 import android.os.Bundle;
 import android.os.Environment;
+import android.os.Handler;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.Menu;
@@ -20,6 +22,8 @@ import android.view.MenuItem;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.ImageView;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import com.github.mikephil.charting.charts.LineChart;
@@ -27,6 +31,8 @@ import com.github.mikephil.charting.components.Description;
 import com.github.mikephil.charting.data.Entry;
 import com.github.mikephil.charting.data.LineData;
 import com.github.mikephil.charting.data.LineDataSet;
+
+import org.w3c.dom.Text;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -36,25 +42,28 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class MainActivity extends Activity implements SensorEventListener, View.OnClickListener {
+    private static final int RECORDS_PER_LETTER = 1;
+    private static final long LENGTH = 2000;
+    private static final long RESOLUTION = 20;
 
     private SensorManager mSensorManager;
     private Sensor mAccelerometer;
     private Sensor mGyroscope;
     private Button mButtonStart, mButtonStop, mButtonSave;
-    private LineChart mChart;
+    private TextView mTextView;
+    private ImageView mImageView;
+    private Drawable[] mImages;
     private ToneGenerator mToneGen;
 
     private boolean mCollectingData = false;
-    private ArrayList<AccelData> mSensorData;
+    private ArrayList<AccelData>[] mSensorData;
+    private int mCurRecord;
+    private char mCurLetter;
     private long mStartTime;
     private long mLastRecordTime;
-    private static final long LENGTH = 2000;
-    private static final long RESOLUTION = 20;
     private double mSumX, mSumY, mSumZ, mSumRX, mSumRY, mSumRZ;
     private int mNumAccelData;
     private int mNumGyroData;
-
-    private String mLastFilename;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -75,11 +84,26 @@ public class MainActivity extends Activity implements SensorEventListener, View.
         mButtonSave.setOnClickListener(this);
         mButtonStop.setEnabled(false);
 
-        // chart
-        mChart = (LineChart) findViewById(R.id.chart);
+        // textview
+        mTextView = (TextView) findViewById(R.id.text);
+        mTextView.setText("Write the letter 'a':");
+
+        // imageview (and drawables)
+        mImages = new Drawable[26];
+        for (int i = 0; i < 26; i++) {
+            String id = String.valueOf((char) ('a' + i));
+            mImages[i] = getDrawable(getResources().getIdentifier(id, "drawable", getPackageName()));
+        }
+        mImageView = (ImageView) findViewById(R.id.image);
+        mImageView.setImageDrawable(mImages[0]);
 
         // tone generator
         mToneGen = new ToneGenerator(AudioManager.STREAM_DTMF, ToneGenerator.MAX_VOLUME);
+
+        // vars
+        mSensorData = new ArrayList[10];
+        mCurRecord = 0;
+        mCurLetter = 'a';
     }
 
     @Override
@@ -131,7 +155,7 @@ public class MainActivity extends Activity implements SensorEventListener, View.
                     AccelData data = new AccelData(mLastRecordTime, mSumX / mNumAccelData,
                             mSumY / mNumAccelData, mSumZ / mNumAccelData, mSumRX / mNumGyroData,
                             mSumRY / mNumGyroData, mSumRZ / mNumGyroData);
-                    mSensorData.add(data);
+                    mSensorData[mCurRecord].add(data);
                 } else {
                     Toast.makeText(this, "DON'T USE THIS DATA", Toast.LENGTH_LONG).show();
                 }
@@ -171,7 +195,7 @@ public class MainActivity extends Activity implements SensorEventListener, View.
                 mButtonStart.setEnabled(false);
 
                 // set up array
-                mSensorData = new ArrayList<>();
+                mSensorData[mCurRecord] = new ArrayList<>();
                 mStartTime = System.currentTimeMillis();
                 mLastRecordTime = 0;
                 mSumX = 0;
@@ -195,30 +219,35 @@ public class MainActivity extends Activity implements SensorEventListener, View.
                 mButtonStop.setEnabled(false);
                 mButtonStart.setEnabled(true);
 
+                // save data
+                saveData();
+
+                // update vars
+                mCurRecord++;
+                if (mCurRecord == RECORDS_PER_LETTER) {
+                    mCurRecord = 0;
+                    mCurLetter++;
+                    if (mCurLetter > 'z') {
+                        onClick(mButtonSave);
+                        break;
+                    }
+
+                    // update text and image; do not start again
+                    mTextView.setText("Write the letter '" + mCurLetter + "':");
+                    mImageView.setImageDrawable(mImages[mCurLetter - 'a']);
+                }
+
                 // make loud beep
                 mToneGen.startTone(ToneGenerator.TONE_DTMF_0, 100);
 
-                // plot data
-                plotData();
                 break;
 
             case R.id.button_save:
-                // pop up Dialog
-                AlertDialog.Builder builder = new AlertDialog.Builder(this);
-                LayoutInflater inflater = this.getLayoutInflater();
-                final View view = inflater.inflate(R.layout.save_dialog, null);
-                ((EditText) view.findViewById(R.id.save_text)).setText(mLastFilename);
-                builder.setMessage(R.string.save_message)
-                        .setView(view)
-                        .setPositiveButton(R.string.button_save, new DialogInterface.OnClickListener() {
-                            @Override
-                            public void onClick(DialogInterface dialog, int which) {
-                                EditText et = (EditText) view.findViewById(R.id.save_text);
-                                saveData(et.getText().toString());
-                            }
-                        });
-                AlertDialog alertDialog = builder.create();
-                alertDialog.show();
+                mTextView.setText("Thank you!");
+                mImageView.setImageDrawable(null);
+
+                // make loud beep
+                mToneGen.startTone(ToneGenerator.TONE_DTMF_0, 100);
                 break;
 
             default:
@@ -226,55 +255,8 @@ public class MainActivity extends Activity implements SensorEventListener, View.
         }
     }
 
-    private void plotData() {
-        List<Entry> xPoints = new ArrayList<>();
-        List<Entry> yPoints = new ArrayList<>();
-        List<Entry> zPoints = new ArrayList<>();
-        List<Entry> rxPoints = new ArrayList<>();
-        List<Entry> ryPoints = new ArrayList<>();
-        List<Entry> rzPoints = new ArrayList<>();
-
-        for (AccelData data : mSensorData) {
-            xPoints.add(new Entry(data.getTimestamp(), (float) data.getX()));
-            yPoints.add(new Entry(data.getTimestamp(), (float) data.getY()));
-            zPoints.add(new Entry(data.getTimestamp(), (float) data.getZ()));
-            rxPoints.add(new Entry(data.getTimestamp(), (float) data.getRx()));
-            ryPoints.add(new Entry(data.getTimestamp(), (float) data.getRy()));
-            rzPoints.add(new Entry(data.getTimestamp(), (float) data.getRz()));
-        }
-
-        LineDataSet xDataSet = new LineDataSet(xPoints, "X");
-        xDataSet.setColor(Color.RED);
-        xDataSet.setDrawCircles(false);
-        LineDataSet yDataSet = new LineDataSet(yPoints, "Y");
-        yDataSet.setColor(Color.GREEN);
-        yDataSet.setDrawCircles(false);
-        LineDataSet zDataSet = new LineDataSet(zPoints, "Z");
-        zDataSet.setColor(Color.BLUE);
-        zDataSet.setDrawCircles(false);
-        LineDataSet rxDataSet = new LineDataSet(rxPoints, "RX");
-        rxDataSet.setColor(Color.DKGRAY);
-        rxDataSet.setDrawCircles(false);
-        LineDataSet ryDataSet = new LineDataSet(ryPoints, "RY");
-        ryDataSet.setColor(Color.GRAY);
-        ryDataSet.setDrawCircles(false);
-        LineDataSet rzDataSet = new LineDataSet(rzPoints, "RZ");
-        rzDataSet.setColor(Color.LTGRAY);
-        rzDataSet.setDrawCircles(false);
-
-        LineData lineData = new LineData(xDataSet, yDataSet, zDataSet, rxDataSet, ryDataSet, rzDataSet);
-        mChart.setData(lineData);
-
-        Description desc = new Description();
-        desc.setText("");
-        mChart.setDescription(desc);
-
-        mChart.invalidate();
-    }
-
-    private void saveData(String label) {
-        mLastFilename = label;
-        String filename = label.toLowerCase() + "_" + System.currentTimeMillis() + ".csv";
+    private void saveData() {
+        String filename = mCurLetter + "_" + System.currentTimeMillis() + ".csv";
         String path = Environment.getExternalStorageDirectory().getAbsolutePath() + "/DataCollector/";
         File dir = new File(path);
         dir.mkdirs();
@@ -284,7 +266,7 @@ public class MainActivity extends Activity implements SensorEventListener, View.
             file.createNewFile();
             FileOutputStream outputStream = new FileOutputStream(file);
             OutputStreamWriter outputStreamWriter = new OutputStreamWriter(outputStream);
-            for (AccelData data : mSensorData) {
+            for (AccelData data : mSensorData[mCurRecord]) {
                 outputStreamWriter.append(data.toString()).append("\n");
             }
             outputStreamWriter.close();
