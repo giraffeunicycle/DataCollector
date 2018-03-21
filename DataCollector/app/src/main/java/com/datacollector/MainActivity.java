@@ -1,9 +1,7 @@
 package com.datacollector;
 
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.content.Context;
-import android.content.DialogInterface;
 import android.graphics.Color;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
@@ -12,14 +10,11 @@ import android.hardware.SensorManager;
 import android.media.AudioManager;
 import android.media.ToneGenerator;
 import android.os.Bundle;
-import android.os.Environment;
-import android.util.Log;
-import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
 import android.widget.Button;
-import android.widget.EditText;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import com.github.mikephil.charting.charts.LineChart;
@@ -28,10 +23,8 @@ import com.github.mikephil.charting.data.Entry;
 import com.github.mikephil.charting.data.LineData;
 import com.github.mikephil.charting.data.LineDataSet;
 
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.OutputStreamWriter;
+import org.tensorflow.contrib.android.TensorFlowInferenceInterface;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -53,8 +46,14 @@ public class MainActivity extends Activity implements SensorEventListener, View.
     private double mSumX, mSumY, mSumZ, mSumRX, mSumRY, mSumRZ;
     private int mNumAccelData;
     private int mNumGyroData;
+    private TextView mTextView;
 
-    private String mLastFilename;
+    private TensorFlowInferenceInterface inferenceInterface;
+    private float[] inVals;
+    private float[] outVals;
+    private static final String INPUT_NAME = "Reshape";
+    private static final String OUTPUT_NAME = "softmax_tensor";
+    private String[] outputNames = new String[] {OUTPUT_NAME};
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -80,6 +79,13 @@ public class MainActivity extends Activity implements SensorEventListener, View.
 
         // tone generator
         mToneGen = new ToneGenerator(AudioManager.STREAM_DTMF, ToneGenerator.MAX_VOLUME);
+
+        mTextView = (TextView) findViewById(R.id.textview);
+
+        // tflite
+        inferenceInterface = new TensorFlowInferenceInterface(getAssets(), "frozen_graph.pb");
+        inVals = new float[600];
+        outVals = new float[26];
     }
 
     @Override
@@ -196,34 +202,83 @@ public class MainActivity extends Activity implements SensorEventListener, View.
                 mButtonStart.setEnabled(true);
 
                 // make loud beep
-                mToneGen.startTone(ToneGenerator.TONE_DTMF_0, 100);
+                //mToneGen.startTone(ToneGenerator.TONE_DTMF_0, 100);
 
                 // plot data
                 plotData();
+                dostuff();
                 break;
 
             case R.id.button_save:
-                // pop up Dialog
-                AlertDialog.Builder builder = new AlertDialog.Builder(this);
-                LayoutInflater inflater = this.getLayoutInflater();
-                final View view = inflater.inflate(R.layout.save_dialog, null);
-                ((EditText) view.findViewById(R.id.save_text)).setText(mLastFilename);
-                builder.setMessage(R.string.save_message)
-                        .setView(view)
-                        .setPositiveButton(R.string.button_save, new DialogInterface.OnClickListener() {
-                            @Override
-                            public void onClick(DialogInterface dialog, int which) {
-                                EditText et = (EditText) view.findViewById(R.id.save_text);
-                                saveData(et.getText().toString());
-                            }
-                        });
-                AlertDialog alertDialog = builder.create();
-                alertDialog.show();
+                dostuff();
+                //Toast.makeText(this, "DO STUFF HERE", Toast.LENGTH_SHORT).show();
                 break;
 
             default:
                 break;
         }
+    }
+
+    private void dostuff() {
+        // normalize data
+        double mean[] = {0,0,0,0,0,0};
+        double stdev[] = {0,0,0,0,0,0};
+
+        for (AccelData data : mSensorData) {
+            mean[0] += data.getX();
+            mean[1] += data.getY();
+            mean[2] += data.getZ();
+            mean[3] += data.getRx();
+            mean[4] += data.getRy();
+            mean[5] += data.getRz();
+        }
+
+        for (int i = 0; i < 6; i++) {
+            mean[i] /= 100;
+        }
+
+        for (AccelData data : mSensorData) {
+            stdev[0] += (data.getX() - mean[0]) * (data.getX() - mean[0]);
+            stdev[1] += (data.getY() - mean[1]) * (data.getY() - mean[1]);
+            stdev[2] += (data.getZ() - mean[2]) * (data.getZ() - mean[2]);
+            stdev[3] += (data.getRx() - mean[3]) * (data.getRx() - mean[3]);
+            stdev[4] += (data.getRy() - mean[4]) * (data.getRy() - mean[4]);
+            stdev[5] += (data.getRz() - mean[5]) * (data.getRz() - mean[5]);
+        }
+
+        for (int i = 0; i < 6; i++) {
+            stdev[i] = Math.sqrt(stdev[i] / 100);
+        }
+
+        // put data into inVals
+        for (int i = 0; i < 600; i += 6) {
+            AccelData data = mSensorData.get(i / 6);
+            inVals[i    ] = (float) ((data.getX()  - mean[0]) / stdev[0]);
+            inVals[i + 1] = (float) ((data.getY()  - mean[1]) / stdev[1]);
+            inVals[i + 2] = (float) ((data.getZ()  - mean[2]) / stdev[2]);
+            inVals[i + 3] = (float) ((data.getRx() - mean[3]) / stdev[3]);
+            inVals[i + 4] = (float) ((data.getRy() - mean[4]) / stdev[4]);
+            inVals[i + 5] = (float) ((data.getRz() - mean[5]) / stdev[5]);
+        }
+
+        // inference
+        inferenceInterface.feed(INPUT_NAME, inVals, 1, 100, 1, 6);
+        inferenceInterface.run(outputNames);
+        inferenceInterface.fetch(OUTPUT_NAME, outVals);
+
+        float maxOut = outVals[0];
+        int maxIndex = 0;
+        for (int i = 1; i < 26; i++) {
+            if (Float.compare(outVals[i], maxOut) > 0) {
+                maxOut = outVals[i];
+                maxIndex = i;
+            }
+        }
+        char prediction = (char) ('a' + maxIndex);
+        //Toast.makeText(this, "You wrote the letter '" + prediction + "'!", Toast.LENGTH_SHORT).show();
+
+        mTextView.setText("You wrote the letter '" + prediction + "'!\nConfidence: " +
+                Float.toString(maxOut * 100) + "%");
     }
 
     private void plotData() {
@@ -270,31 +325,5 @@ public class MainActivity extends Activity implements SensorEventListener, View.
         mChart.setDescription(desc);
 
         mChart.invalidate();
-    }
-
-    private void saveData(String label) {
-        mLastFilename = label;
-        String filename = label.toLowerCase() + "_" + System.currentTimeMillis() + ".csv";
-        String path = Environment.getExternalStorageDirectory().getAbsolutePath() + "/DataCollector/";
-        File dir = new File(path);
-        dir.mkdirs();
-        File file = new File(dir, filename);
-
-        try {
-            file.createNewFile();
-            FileOutputStream outputStream = new FileOutputStream(file);
-            OutputStreamWriter outputStreamWriter = new OutputStreamWriter(outputStream);
-            for (AccelData data : mSensorData) {
-                outputStreamWriter.append(data.toString()).append("\n");
-            }
-            outputStreamWriter.close();
-            outputStream.flush();
-            outputStream.close();
-            Toast.makeText(this, "File \"" + filename + "\" saved.", Toast.LENGTH_SHORT).show();
-        } catch (IOException e) {
-            Log.e("Exception", "File write failed: " + e.toString());
-            Toast.makeText(this, "Error! File not saved.", Toast.LENGTH_SHORT).show();
-        }
-
     }
 }

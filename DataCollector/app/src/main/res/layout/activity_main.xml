@@ -9,27 +9,37 @@
     android:paddingTop="@dimen/activity_vertical_margin"
     tools:context=".MainActivity">
 
+    <TextView
+        android:id="@+id/textview"
+        android:layout_width="fill_parent"
+        android:layout_height="100dp"
+        android:textSize="24sp"
+        android:gravity="center"
+        android:text="@string/welcome"/>
+
+    <com.github.mikephil.charting.charts.LineChart
+        android:id="@+id/chart"
+        android:layout_width="fill_parent"
+        android:layout_height="320dp" />
+
     <Button
         android:id="@+id/button_start"
         android:layout_width="fill_parent"
-        android:layout_height="60dp"
+        android:layout_height="fill_parent"
         android:text="@string/button_start" />
 
     <Button
         android:id="@+id/button_stop"
         android:layout_width="fill_parent"
         android:layout_height="60dp"
+        android:visibility="gone"
         android:text="@string/button_stop" />
 
     <Button
         android:id="@+id/button_save"
         android:layout_width="fill_parent"
         android:layout_height="60dp"
+        android:visibility="gone"
         android:text="@string/button_save" />
-
-    <com.github.mikephil.charting.charts.LineChart
-        android:id="@+id/chart"
-        android:layout_width="fill_parent"
-        android:layout_height="fill_parent" />
 
 </LinearLayout>
