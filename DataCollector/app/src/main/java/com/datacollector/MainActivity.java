@@ -47,6 +47,7 @@ public class MainActivity extends Activity implements SensorEventListener, View.
     private int mNumAccelData;
     private int mNumGyroData;
     private TextView mTextView;
+    private TextView mTextView2;
 
     private TensorFlowInferenceInterface inferenceInterface;
     private float[] inVals;
@@ -81,9 +82,10 @@ public class MainActivity extends Activity implements SensorEventListener, View.
         mToneGen = new ToneGenerator(AudioManager.STREAM_DTMF, ToneGenerator.MAX_VOLUME);
 
         mTextView = (TextView) findViewById(R.id.textview);
+        mTextView2 = (TextView) findViewById(R.id.textview2);
 
         // tflite
-        inferenceInterface = new TensorFlowInferenceInterface(getAssets(), "frozen_graph.pb");
+        inferenceInterface = new TensorFlowInferenceInterface(getAssets(), "frozen_graph_all2.pb");
         inVals = new float[600];
         outVals = new float[26];
     }
@@ -277,8 +279,8 @@ public class MainActivity extends Activity implements SensorEventListener, View.
         char prediction = (char) ('a' + maxIndex);
         //Toast.makeText(this, "You wrote the letter '" + prediction + "'!", Toast.LENGTH_SHORT).show();
 
-        mTextView.setText("You wrote the letter '" + prediction + "'!\nConfidence: " +
-                Float.toString(maxOut * 100) + "%");
+        mTextView.setText("Confidence: " + Integer.toString((int) (maxOut * 100 + 0.5)) + "%");
+        mTextView2.setText("" + prediction);
     }
 
     private void plotData() {
