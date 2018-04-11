@@ -1,5 +1,5 @@
 # DataCollector
-Collects accelerometer data.
+Collects accelerometer and gyroscope data.
 
 ## Branches
 demo: The complete app where you can write a letter and it tells you what it is.  
